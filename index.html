@@ -167,6 +167,11 @@
     background:#fff; transition:.2s;}
   .switch input:checked + .track{background:linear-gradient(135deg,#ff7ab0,#7ad7ff);}
   .switch input:checked + .track + .knob{transform:translateX(20px);}
+  .freshrow{display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12);
+    padding:11px 14px; border-radius:14px; margin-bottom:4px;}
+  .freshrow span{font-size:13.5px; color:var(--muted); font-weight:600;}
+  .btn.sm{padding:9px 12px; font-size:13px; border-radius:11px; flex:0 0 auto;}
 
   .fade-enter{animation:cardIn .42s cubic-bezier(.2,.85,.25,1) both;}
   @keyframes cardIn{from{opacity:0; transform:scale(.9) translateY(26px);} to{opacity:1; transform:none;}}
@@ -230,8 +235,16 @@
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-label="Настройки">
   <div class="grip"></div>
-  <h2>Игроки и режим</h2>
-  <p class="sub">Можно играть просто по кругу или передавать ход по именам.</p>
+  <h2>Настройки игры</h2>
+  <p class="sub">Передавайте ход по именам, а вопросы — не повторяйте от встречи к встрече.</p>
+
+  <div class="toggle">
+    <span>Не повторять вопросы между встречами</span>
+    <label class="switch">
+      <input type="checkbox" id="noRepeat">
+      <span class="track"></span><span class="knob"></span>
+    </label>
+  </div>
 
   <div class="toggle">
     <span>Ходить по очереди</span>
@@ -247,6 +260,11 @@
            autocomplete="off" autocapitalize="words" autocorrect="off"
            spellcheck="false" enterkeyhint="done" inputmode="text">
     <button class="btn" id="addPlayer">＋</button>
+  </div>
+
+  <div class="freshrow">
+    <span id="freshText">Свежих вопросов: —</span>
+    <button class="btn ghost sm" id="resetSeen">Сбросить историю</button>
   </div>
 
   <div class="actions">
@@ -500,10 +518,12 @@ const catById = id => CATEGORIES.find(c=>c.id===id);
 let state = {
   active: CATEGORIES.map(c=>c.id), // выбранные категории
   order: [],        // перемешанный список {cat, i}
-  pos: -1,          // текущая позиция
+  pos: 0,           // текущая позиция
   players: [],
   turnsOn: false,
   turnIdx: 0,
+  seen: {},         // показанные вопросы: ключ "cat:i" -> 1 (память между встречами)
+  noRepeat: true,   // не повторять уже показанные
 };
 
 function save(){ try{ localStorage.setItem(LS, JSON.stringify(state)); }catch(e){} }
@@ -529,10 +549,19 @@ function shuffle(arr){
   }
   return a;
 }
+const keyOf = it => it.cat + ":" + it.i;
+
 function rebuildDeck(reset=true){
-  state.order = shuffle(buildPool());
-  if(reset){ state.pos = -1; state.turnIdx = 0; }
-  if(state.pos >= state.order.length) state.pos = state.order.length-1;
+  const pool = buildPool();
+  if(state.noRepeat){
+    const fresh = shuffle(pool.filter(it => !state.seen[keyOf(it)]));
+    const old   = shuffle(pool.filter(it =>  state.seen[keyOf(it)]));
+    state.order = fresh.concat(old);        // свежие вопросы всегда впереди
+  } else {
+    state.order = shuffle(pool);
+  }
+  if(reset){ state.pos = 0; state.turnIdx = 0; }
+  if(state.pos >= state.order.length) state.pos = Math.max(0, state.order.length-1);
   save();
 }
 
@@ -568,6 +597,10 @@ function cardHTML(q, extraClass=""){
 }
 
 function render(animate=false){
+  // помечаем текущий вопрос показанным — чтобы не повторялся в следующий раз
+  const curItem = state.order[state.pos];
+  if(curItem && !state.seen[keyOf(curItem)]){ state.seen[keyOf(curItem)] = 1; save(); }
+
   // карточки сзади (для глубины колоды)
   const b2 = questionAt(state.pos+2);
   const b1 = questionAt(state.pos+1);
@@ -717,7 +750,7 @@ function flingTop(dir, cb){
 
 /* ============================ Лист настроек ============================ */
 const scrim=document.getElementById("scrim"), sheet=document.getElementById("sheet");
-function openSheet(){ scrim.classList.add("show"); sheet.classList.add("show"); }
+function openSheet(){ updateFresh(); scrim.classList.add("show"); sheet.classList.add("show"); }
 function closeSheet(){ scrim.classList.remove("show"); sheet.classList.remove("show"); }
 document.getElementById("openSheet").onclick=openSheet;
 document.getElementById("closeSheet").onclick=closeSheet;
@@ -725,6 +758,25 @@ scrim.onclick=closeSheet;
 
 const turnsOn=document.getElementById("turnsOn");
 turnsOn.onchange=()=>{ state.turnsOn=turnsOn.checked; save(); renderTurn(); };
+
+// --- Память пройденного: не повторять между встречами ---
+const noRepeatEl=document.getElementById("noRepeat");
+const freshText=document.getElementById("freshText");
+function updateFresh(){
+  const pool=buildPool();
+  const left=pool.filter(it=>!state.seen[keyOf(it)]).length;
+  freshText.textContent = left>0
+    ? `Свежих вопросов: ${left} из ${pool.length}`
+    : `Все ${pool.length} пройдены — пойдут по кругу`;
+}
+noRepeatEl.onchange=()=>{
+  state.noRepeat=noRepeatEl.checked;
+  rebuildDeck(true); render(true); updateFresh();
+};
+document.getElementById("resetSeen").onclick=()=>{
+  state.seen={}; haptic(20);
+  rebuildDeck(true); render(true); updateFresh();
+};
 
 const playerList=document.getElementById("playerList");
 const playerInput=document.getElementById("playerInput");
@@ -764,7 +816,8 @@ function init(){
   load();
   if(!state.order.length) rebuildDeck(true);
   turnsOn.checked=state.turnsOn;
-  renderChips(); renderPlayers(); render(false);
+  noRepeatEl.checked=state.noRepeat;
+  renderChips(); renderPlayers(); render(false); updateFresh();
 }
 init();
 
