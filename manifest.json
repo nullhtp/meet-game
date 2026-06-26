@@ -1,0 +1,22 @@
+{
+  "name": "Поближе — вопросы, чтобы узнать друг друга",
+  "short_name": "Поближе",
+  "description": "Карточки с вопросами для компании взрослых, которые хотят узнать друг друга ближе.",
+  "lang": "ru",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1530",
+  "theme_color": "#1a1530",
+  "categories": ["games", "social", "lifestyle"],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
